@@ -23,7 +23,7 @@
       {
         "type": "bytes",
         "logicalType": "decimal",
-        "precision": 4,
+        "precision": 8,
         "scale": 2
       }
     },
