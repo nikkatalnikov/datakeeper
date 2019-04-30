@@ -1,21 +1,29 @@
 package it_tests
 
-import org.apache.spark.sql.avro._
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{DecimalType, IntegerType, StructType}
-import org.apache.spark.sql.{Row, SparkSession, _}
+import java.math.BigDecimal
+import java.nio.ByteBuffer
 
-case class TestClass(field1: Int, field2: Int)(implicit spark: SparkSession) {
-  private val schema = new StructType()
-    .add("field1", IntegerType)
-    .add("field2", DecimalType(38, 2))
+import org.apache.avro.generic.GenericRecord
+import org.apache.avro.{RandomData, Schema}
 
-  def toAvroDF: DataFrame = {
-    val df = spark.createDataFrame(
-      spark.sparkContext.parallelize(Seq(Row(field1, BigDecimal(field2, 2)))),
-      StructType(schema)
-    )
+import scala.io.Source
 
-    df.select(to_avro(struct(df.columns.map(column):_*)).alias("value"))
+case class TestClass(id: Long, groupId: Int) {
+
+  private val source = Source.fromURL(getClass.getResource("/test_schema.avsc"))
+  val schema: Schema = new Schema.Parser().parse(source.mkString)
+  source.close()
+
+  def toAvroRecord: GenericRecord = {
+    val randomData = new RandomData(schema, 1).iterator.next.asInstanceOf[GenericRecord]
+    randomData.put("id", id)
+    randomData.put("group_id", groupId)
+    randomData.put("amount_payed", serializeDecimal(new BigDecimal("100.01")))
+
+    println(s"randomData: $randomData")
+    randomData
   }
+
+  private def serializeDecimal(value: BigDecimal): ByteBuffer =
+    ByteBuffer.wrap(value.unscaledValue.toByteArray)
 }

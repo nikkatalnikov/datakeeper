@@ -1,15 +1,17 @@
 package it_tests
 
 import com.typesafe.config.ConfigFactory
-import datakeeper.{DataKeeper, DataKeeperConfig}
-import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient
+import datakeeper.DataKeeperConfig
 import it_tests.utils.PrestoService
+import org.apache.avro.generic.GenericRecord
 import org.apache.kafka.clients.admin.{AdminClient, NewTopic}
-import org.apache.spark.sql.avro.SchemaConverters
-import org.apache.spark.sql.types.{DecimalType, IntegerType, StructType}
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 import org.scalatest.{Assertion, BeforeAndAfterAll, Matchers, Suite}
 
-import collection.JavaConverters._
+import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 
 trait TestHelper extends BeforeAndAfterAll with Matchers {
@@ -21,61 +23,49 @@ trait TestHelper extends BeforeAndAfterAll with Matchers {
     .resolve()
 
   val config = DataKeeperConfig(testConfig)
+
+  val producer = new KafkaProducer[String, GenericRecord](config.kafkaParams.asJava)
   val partitionCount = 3
+
+  private val sortColumn = config.sortColumns.head
 
   private val client = AdminClient.create(config.kafkaParams.asJava)
   private val topicConf = new NewTopic(config.topic, partitionCount, 1)
 
-  private val schema = new StructType()
-    .add("field1", IntegerType)
-    .add("field2", DecimalType(38, 2))
-
-  private val schemaRegistryClient =
-    new CachedSchemaRegistryClient(config.kafkaParams("schema.registry.url").asInstanceOf[String], 128)
-
-  private val avroSchema = SchemaConverters.toAvroType(schema)
-
   override def beforeAll(): Unit = {
     client.createTopics(Set(topicConf).asJava)
-    schemaRegistryClient.register(config.topic + "-test", avroSchema)
-    println(s"topic ${config.topic} created")
   }
 
   override def afterAll(): Unit = {
     client.deleteTopics(Set(config.topic).asJava)
-    schemaRegistryClient.deleteSubject(config.topic + "-test")
-    println(s"topic ${config.topic} dropped")
   }
 
   def checkRow(columns: Map[String, String], f1: String, f2: String, v: String): Assertion =
     columns should contain theSameElementsAs Seq(
-      "field1" -> f1,
-      "field2" -> f2,
-      DataKeeper.partitionVersionColumn -> v)
+      "id" -> f1,
+      "group_ip" -> f2,
+      config.partitionVersionColumn -> v)
 
   def executeStatement(sql: String): Boolean =
     PrestoService.execStatement(sql)
 
-  def executeQuery(sql: String): Stream[Map[String, String]] =
+  def executeQuery(sql: String): List[Map[String, String]] =
     PrestoService.execQuery(sql, x => Map(
-      "field1" -> x.getString(1),
-      "field2" -> x.getString(2),
-      DataKeeper.partitionVersionColumn -> x.getString(3)))
+      "id" -> x.getString(1),
+      "group_ip" -> x.getString(14),
+      config.partitionVersionColumn -> x.getString(15)))
 
-  def readTable(): Stream[Map[String, String]] =
-    executeQuery(s"SELECT * FROM ${config.hiveTable} as t ORDER BY field1")
+  def readTable(): List[Map[String, String]] =
+    executeQuery(s"SELECT * FROM hive.${config.hiveTable} as t ORDER BY $sortColumn")
 
-  def readTable(whereClause: String): Stream[Map[String, String]] =
-    executeQuery(s"SELECT * FROM ${config.hiveTable} as t WHERE $whereClause ORDER BY field1")
+  def readTable(whereClause: String): List[Map[String, String]] =
+    executeQuery(s"SELECT * FROM hive.${config.hiveTable} as t WHERE $whereClause ORDER BY $sortColumn")
 
   def produceRecords(records: TestClass*): Unit = {
-    records
-      .foreach(record => record.toAvroDF
-        .write
-        .format("kafka")
-        .option("kafka.bootstrap.servers", config.kafkaParams("bootstrap.servers").asInstanceOf[String])
-        .option("topic", config.topic)
-        .save()
-      )
+    val fs = records
+      .map(record => producer.send(new ProducerRecord(config.topic, record.toAvroRecord)))
+      .map(f => Future { f.get() })
+
+    Await.ready(Future.sequence(fs), 30 second)
   }
 }
