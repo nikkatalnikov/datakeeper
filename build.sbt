@@ -29,7 +29,7 @@ libraryDependencies ++= Seq(
 
   "io.reactivex" %% "rxscala" % "0.26.5",
 
-  "com.facebook.presto" % "presto-jdbc" % "0.151" % Test,
+  "com.facebook.presto" % "presto-jdbc" % "0.215" % Test,
   "com.microsoft.azure" % "azure-sqldb-spark" % "1.0.2",
   "com.microsoft.sqlserver" % "mssql-jdbc" % "7.2.0.jre8",
   "com.typesafe.slick" %% "slick" % "3.3.0",

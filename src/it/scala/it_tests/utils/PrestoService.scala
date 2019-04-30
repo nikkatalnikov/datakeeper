@@ -22,7 +22,7 @@ object PrestoService {
     rs
   }
 
-  def execQuery[T](sql: String, f: ResultSet => T): Stream[T] = {
+  def execQuery[T](sql: String, f: ResultSet => T): List[T] = {
     val statement = connection.createStatement()
     val rs = statement.executeQuery(sql)
 
@@ -30,6 +30,7 @@ object PrestoService {
       .continually()
       .takeWhile(_ => rs.next)
       .map(_ => f(rs))
+      .toList
 
     statement.close()
     result
