@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function wait() {
-    while [ $(kubectl get pods | awk '{print $3}' | tail -n +2 | grep -v "Running\|Succeeded\|Completed" | wc -l) != 0 ]; do
+    while [[ $(kubectl get pods | awk '{print $3}' | tail -n +2 | grep -v "Running\|Succeeded\|Completed" | wc -l) != 0 ]]; do
         sleep 1
     done
 }
@@ -26,7 +26,7 @@ function drop_spark_operator() {
 }
 
 function create() {
-    minikube ssh echo "sudo ip link set docker0 promisc on"
+    minikube ssh -- sudo ip link set docker0 promisc on
     kubectl create secret generic mssql-user --from-literal=user=sa
     kubectl create secret generic mssql-password --from-literal=password=YOUR_PASSWORD_123_abcd
     kubectl create -f mssql.yaml && wait
@@ -48,7 +48,7 @@ function delete() {
 }
 
 cd "$(dirname "$0")"
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
     case "$1" in
         --serve-jar)
             serve_jar_directory
