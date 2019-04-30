@@ -2,23 +2,28 @@ package datakeeper
 
 import java.util.concurrent.Executors
 
-import com.typesafe.config.ConfigFactory
-import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient
+import com.typesafe.config.{Config, ConfigFactory}
+import org.apache.avro.generic.GenericRecord
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.sql._
-import org.apache.spark.sql.avro.from_avro
+import org.apache.spark.sql.avro.SchemaConverters
+import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.{Row, _}
+import org.apache.spark.streaming.kafka010.{KafkaUtils, LocationStrategies}
 import org.slf4j.LoggerFactory
 
+import scala.collection.JavaConverters._
 import scala.concurrent._
 import scala.concurrent.duration.{Duration, DurationDouble}
 
 object DataKeeper {
-
-  val partitionVersionColumn = "partition_version"
-
   type PartitionKey = Map[String, Any]
+
+  val defaultConfig: Config = ConfigFactory.parseResources("datakeeper.conf").resolve()
+  val config = DataKeeperConfig(defaultConfig)
+
+  private val partitionVersionColumn = config.partitionVersionColumn
 
   private def partitionPathWithOutVersion(key: PartitionKey, tablePath: String) =
     s"$tablePath/${partitionPathWithOutVersionAndTablePrefix(key)}/"
@@ -49,10 +54,6 @@ object DataKeeper {
   @transient private[this] val logger = LoggerFactory.getLogger(this.getClass)
 
   def main(args: Array[String]): Unit = {
-    val defaultConfig = ConfigFactory.parseResources("datakeeper.conf").resolve()
-    val config = DataKeeperConfig(defaultConfig)
-    logger.info(s"Parsed config: $config}")
-
     val spark = SparkSession
       .builder()
       .config(config.sparkConf)
@@ -69,27 +70,26 @@ object DataKeeper {
     logger.info(offsetRanges.mkString("Offsets to read: ", ", ", ""))
     logger.info(s"Count of messages: ${offsetRanges.map(range => range.untilOffset - range.fromOffset).sum}")
 
-    val schemaRegistryClient =
-      new CachedSchemaRegistryClient(config.kafkaParams("schema.registry.url").asInstanceOf[String], 128)
+    val kafkaRdd = KafkaUtils.createRDD[String, GenericRecord](
+      sc = spark.sparkContext,
+      kafkaParams = config.kafkaParams.asJava,
+      offsetRanges = offsetRanges,
+      locationStrategy = LocationStrategies.PreferConsistent)
 
-    val avroSchema = schemaRegistryClient.getLatestSchemaMetadata(config.topic + "-test").getSchema
-    logger.info(s"${config.topic} topic avro schema $avroSchema")
+    val avroSchema = kafkaRdd.first.value.getSchema
+    logger.info(s"avroSchema: $avroSchema")
 
-    val df = spark
-      .read
-      .format("kafka")
-      .option("kafka.bootstrap.servers", config.kafkaParams("bootstrap.servers").asInstanceOf[String])
-      .option("startingOffsets", config.kafkaParams("auto.offset.reset").asInstanceOf[String])
-      .option("subscribe", config.topic)
-      .load()
+    val sparkSchema = SchemaConverters.toSqlType(avroSchema).dataType.asInstanceOf[StructType]
+    logger.info(s"sparkSchema: $sparkSchema")
 
-    val distinctRecords = df
-      .select(from_avro(col("value"), avroSchema.toString).as("value"))
-      .select("value.*")
-      .dropDuplicates(config.idColumns)
+    val rowRDD = kafkaRdd.map[Row](cr =>
+      AvroMapping.convertAvroToSparkValue(cr.value, sparkSchema, cr.value.getSchema).asInstanceOf[GenericRow])
 
+    val df = spark.createDataFrame(rowRDD, sparkSchema)
+    logger.info(s"df, ${df.show}")
+
+    val distinctRecords = df.dropDuplicates(config.idColumns)
     logger.info(s"distinctRecords, ${distinctRecords.show}")
-    logger.info(s"distinctRecords schema, ${distinctRecords.printSchema()}")
 
     val partitions = getPartitions(distinctRecords, config.partitioningColumns)
     logger.info(partitions.mkString(s"Input partitions (${partitions.length}): ", ", ", ""))
@@ -139,7 +139,7 @@ object DataKeeper {
         .sortWithinPartitions(config.sortColumns.map(col): _*)
         .write
         .partitionBy(config.partitioningColumns :+ partitionVersionColumn: _*)
-        .mode(SaveMode.ErrorIfExists)
+        .mode(SaveMode.Append)
         .format(config.format)
         .save(config.tableDir)
 
