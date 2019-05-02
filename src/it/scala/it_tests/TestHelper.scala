@@ -40,6 +40,13 @@ trait TestHelper extends BeforeAndAfterAll with Matchers {
     client.deleteTopics(Set(config.topic).asJava)
   }
 
+  def executeHiveStatement = ???
+
+  def getDecimal: String =
+    PrestoService
+      .execQuery(s"SELECT amount_payed FROM hive.${config.hiveTable} as t", x => x.getString(1))
+      .head
+
   def checkRow(columns: Map[String, String], f1: String, f2: String, v: String): Assertion =
     columns should contain theSameElementsAs Seq(
       "id" -> f1,

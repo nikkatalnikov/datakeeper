@@ -69,11 +69,108 @@ class DataKeeperTest extends FlatSpec with Eventually with Matchers with Inside 
     fs.exists(new Path(s"${config.tableDir}/group_id=4")) shouldBe true
 
     inside(readTable()) {
-      case Seq(r1, r2, r3, r4) =>
+      case List(r1, r2, r3, r4) =>
         checkRow(r1, "1", "1", "1")
         checkRow(r2, "2", "2", "1")
         checkRow(r3, "3", "2", "1")
         checkRow(r4, "4", "4", "1")
     }
   }
+
+  it should "respect decimal data precision and scale" in {
+    getDecimal shouldEqual "100.01"
+  }
+
+  it should "remove duplicates from incoming data" in {
+    produceRecords(
+      TestClass(1, 1), // already existing record
+      TestClass(3, 2),
+      TestClass(3, 2), // already existing and duplicated
+      TestClass(5, 5),
+      TestClass(5, 5)) // duplicated but not existing
+
+    runApp()
+
+    inside(readTable()) {
+      case List(r1, r2, r3, r4, r5) =>
+        checkRow(r1, "1", "1", "1")
+        checkRow(r2, "2", "2", "1")
+        checkRow(r3, "3", "2", "1")
+        checkRow(r4, "4", "4", "1")
+        checkRow(r5, "5", "5", "1")
+    }
+  }
+
+  it should "update existing partitions" in {
+    produceRecords(TestClass(6, 1))
+
+    runApp()
+
+    inside(readTable()) {
+      case List(r1, r2, r3, r4, r5, r6) =>
+        checkRow(r1, "1", "1", "2")
+        checkRow(r2, "2", "2", "1")
+        checkRow(r3, "3", "2", "1")
+        checkRow(r4, "4", "4", "1")
+        checkRow(r5, "5", "5", "1")
+        checkRow(r6, "6", "1", "2")
+    }
+  }
+
+//  TODO: use Hive SQL client for executeHiveStatement
+//  it should "ignore bad partition-version" in {
+//
+//    val path = s"${config.tableDir}/group_id=9/${config.partitionVersionColumn}="
+//
+//    val dropPartitionSql = s"""
+//      | ALTER TABLE hive.${config.hiveTable}
+//      | if not exists drop partition (field1=1, ${config.partitionVersionColumn}=1)
+//      """.stripMargin
+//
+//    val addPartitionSql = s"""
+//      | ALTER TABLE hive.${config.hiveTable}
+//      | if not exists add partition (group_id=9, ${config.partitionVersionColumn}=9) LOCATION '${path}9'
+//      """.stripMargin
+//
+//    produceRecords(TestClass(10, 9))
+//    runApp()
+//
+//    fs.rename(new Path(path + 1), new Path(path + 9))
+//    executeHiveStatement(dropPartitionSql)
+//    executeHiveStatement(addPartitionSql)
+//    fs.mkdirs(new Path(path + 10))
+//
+//    produceRecords(TestClass(11, 9))
+//
+//    runApp()
+//
+//    fs.exists(new Path(path + 9)) shouldBe false
+//    fs.exists(new Path(path + 10)) shouldBe true
+//
+//    inside(readTable("group_id = 9")) {
+//      case List(r1, r2) =>
+//        checkRow(r1, "10", "9", "10")
+//        checkRow(r2, "11", "9", "10")
+//    }
+//  }
+
+//  TODO: implement once previous is done
+//  it should "save new partition even if data come only for one of existing partition" in {
+//    produceRecords(TestClass(12, 12), TestClass(11, 9))
+//
+//    runApp()
+//
+//    inside(readTable()) {
+//      case List(r1, r2, r3, r4, r5, r6, r7, r8, r10, r11, r12) =>
+//        checkRow(r1, "1", "1", "4")
+//        checkRow(r2, "2", "2", "1")
+//        checkRow(r3, "3", "2", "1")
+//        checkRow(r4, "4", "4", "1")
+//        checkRow(r5, "5", "5", "1")
+//        checkRow(r6, "6", "1", "4")
+//        checkRow(r10, "10", "9", "10")
+//        checkRow(r11, "11", "9", "10")
+//        checkRow(r12, "12", "12", "1")
+//    }
+//  }
 }
