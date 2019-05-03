@@ -24,6 +24,10 @@ class DataKeeperTest extends FlatSpec with Eventually with Matchers with Inside 
     sparkController.cleanUpSparkTestDeployment()
   }
 
+  override def afterAll(): Unit = {
+    super.afterAll()
+  }
+
   override def beforeAll(): Unit = {
     super.beforeAll()
 
@@ -77,7 +81,8 @@ class DataKeeperTest extends FlatSpec with Eventually with Matchers with Inside 
     }
   }
 
-  it should "respect decimal data precision and scale" in {
+  // TODO: add all logical/complex types
+  it should "respect complex and logical datatypes" in {
     getDecimal shouldEqual "100.01"
   }
 
@@ -119,32 +124,25 @@ class DataKeeperTest extends FlatSpec with Eventually with Matchers with Inside 
 
 //  TODO: use Hive SQL client for executeHiveStatement
 //  it should "ignore bad partition-version" in {
-//
 //    val path = s"${config.tableDir}/group_id=9/${config.partitionVersionColumn}="
 //
-//    val dropPartitionSql = s"""
-//      | ALTER TABLE hive.${config.hiveTable}
-//      | if not exists drop partition (field1=1, ${config.partitionVersionColumn}=1)
-//      """.stripMargin
+//    fs.mkdirs(new Path(path + 9))
 //
 //    val addPartitionSql = s"""
 //      | ALTER TABLE hive.${config.hiveTable}
 //      | if not exists add partition (group_id=9, ${config.partitionVersionColumn}=9) LOCATION '${path}9'
 //      """.stripMargin
 //
+//    executeHiveStatement(addPartitionSql)
 //    produceRecords(TestClass(10, 9))
 //    runApp()
 //
-//    fs.rename(new Path(path + 1), new Path(path + 9))
-//    executeHiveStatement(dropPartitionSql)
-//    executeHiveStatement(addPartitionSql)
 //    fs.mkdirs(new Path(path + 10))
-//
 //    produceRecords(TestClass(11, 9))
 //
 //    runApp()
 //
-//    fs.exists(new Path(path + 9)) shouldBe false
+//    fs.exists(new Path(path + 9)) shouldBe true
 //    fs.exists(new Path(path + 10)) shouldBe true
 //
 //    inside(readTable("group_id = 9")) {
@@ -156,18 +154,18 @@ class DataKeeperTest extends FlatSpec with Eventually with Matchers with Inside 
 
 //  TODO: implement once previous is done
 //  it should "save new partition even if data come only for one of existing partition" in {
-//    produceRecords(TestClass(12, 12), TestClass(11, 9))
+//    produceRecords(TestClass(1, 1), TestClass(6, 1), TestClass(12, 12), TestClass(11, 9))
 //
 //    runApp()
 //
 //    inside(readTable()) {
-//      case List(r1, r2, r3, r4, r5, r6, r7, r8, r10, r11, r12) =>
-//        checkRow(r1, "1", "1", "4")
+//      case List(r1, r2, r3, r4, r5, r6, r10, r11, r12) =>
+//        checkRow(r1, "1", "1", "3")
 //        checkRow(r2, "2", "2", "1")
 //        checkRow(r3, "3", "2", "1")
 //        checkRow(r4, "4", "4", "1")
 //        checkRow(r5, "5", "5", "1")
-//        checkRow(r6, "6", "1", "4")
+//        checkRow(r6, "6", "1", "3")
 //        checkRow(r10, "10", "9", "10")
 //        checkRow(r11, "11", "9", "10")
 //        checkRow(r12, "12", "12", "1")
