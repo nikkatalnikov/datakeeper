@@ -2,7 +2,6 @@ package datakeeper
 
 import com.typesafe.config.Config
 import org.apache.kafka.common.TopicPartition
-import org.apache.spark.SparkConf
 
 import scala.collection.JavaConverters._
 import scala.util.Try
@@ -17,7 +16,6 @@ case class DataKeeperConfig(
   partitioningColumns: Seq[String],
   partitionVersionColumn: String,
   sortColumns: Seq[String],
-  sparkConf: SparkConf,
   topic: String,
   kafkaParams: Map[String, Object],
   zooKeeperSettings: ZooKeeperSettings,
@@ -33,11 +31,6 @@ case class ZooKeeperSettings(url: String, sessionTimeoutMs: Int, connectionTimeo
 object DataKeeperConfig {
 
   def apply(config: Config): DataKeeperConfig = {
-
-    val sparkConf: SparkConf = new SparkConf()
-      .setAppName(config.getString("spark.app.name"))
-      .set("spark.serializer", config.getString("spark.serializer"))
-
     val hiveTable = config.getString("hive.tableName")
 
     val topic = config.getString("kafka.topic")
@@ -90,7 +83,6 @@ object DataKeeperConfig {
       partitionVersionColumn = "partition_version",
       idColumns = idColumns,
       sortColumns = sortColumns,
-      sparkConf = sparkConf,
       topic = topic,
       kafkaParams = kafkaParams,
       zooKeeperSettings = zooKeeperSettings,
