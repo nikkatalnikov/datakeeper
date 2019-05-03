@@ -8,8 +8,8 @@ spec:
   mode: cluster
   image: "gcr.io/spark-operator/spark:v2.4.0-gcs-prometheus"
   imagePullPolicy: Always
-  mainClass: datakeeper.DataKeeper
-  mainApplicationFile: "http://172.20.10.3:8080/datakeeper.jar"
+  mainClass: example.Example
+  mainApplicationFile: "http://192.168.0.5:8080/datakeeper.jar"
   sparkVersion: "2.4.0"
   restartPolicy:
     type: Never
