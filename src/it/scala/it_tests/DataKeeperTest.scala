@@ -8,8 +8,7 @@ import org.scalatest._
 import org.scalatest.concurrent.Eventually
 
 class DataKeeperTest extends FlatSpec with Eventually with Matchers with Inside with TestHelper {
-  private val itConfig = ConfigFactory.load("it.conf")
-  private val SparkAppDeployment = itConfig.getString("spark.crd")
+  private val SparkAppDeployment = ConfigFactory.load("it.conf").getString("spark.crd")
 
   private val fs = FileSystem.get(new java.net.URI(config.fileSystemUrl), new Configuration())
   private val allPartitionColmns = config.partitioningColumns :+ config.partitionVersionColumn
