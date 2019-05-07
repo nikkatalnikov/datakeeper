@@ -37,6 +37,7 @@ libraryDependencies ++= Seq(
 
   "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
   "com.typesafe" % "config" % "1.0.2",
+  "com.github.pureconfig" %% "pureconfig" % "0.10.2",
   "io.kubernetes" % "client-java" % "4.0.0" % Test,
   "org.json" % "json" % "20180813" % Test,
 
