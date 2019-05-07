@@ -1,35 +1,27 @@
-package datakeeper
+package datakeeper.dirtypartitioner
 
 import java.util.concurrent.Executors
 
 import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.avro.Schema
-import org.apache.avro.generic.GenericRecord
 import org.apache.hadoop.fs.Path
-import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.avro.SchemaConverters
-import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{Row, _}
-import org.apache.spark.streaming.kafka010.{KafkaUtils, LocationStrategies}
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.JavaConverters._
 import scala.concurrent._
 import scala.concurrent.duration.{Duration, DurationDouble}
 
-object DataKeeper {
-  type PartitionKey = Map[String, Any]
-  type KafkaRDD = RDD[ConsumerRecord[String, GenericRecord]]
+object DirtyPartitioner {
 
   implicit class DirtyPartitionDF(df: DataFrame)(implicit spark: SparkSession) extends Serializable {
+    type PartitionKey = Map[String, Any]
+
     @transient
     lazy val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
-    private val defaultConfig: Config = ConfigFactory.parseResources("datakeeper.conf").resolve()
-    val config: DataKeeperConfig = DataKeeperConfig(defaultConfig)
+    private val defaultConfig: Config = ConfigFactory.parseResources("dirtypartitioner.conf").resolve()
+    val config: DirtyPartitionerConfig = DirtyPartitionerConfig(defaultConfig)
 
     private val partitionVersionColumn = config.partitionVersionColumn
 
@@ -86,12 +78,12 @@ object DataKeeper {
     }
 
     private def addNewPartitions(
-      spark: SparkSession,
-      config: DataKeeperConfig,
-      incomingData: DataFrame,
-      partitions: Seq[PartitionKey],
-      existingPartitions: Seq[PartitionInfo],
-      hiveSchema: StructType): Unit = {
+                                  spark: SparkSession,
+                                  config: DirtyPartitionerConfig,
+                                  incomingData: DataFrame,
+                                  partitions: Seq[PartitionKey],
+                                  existingPartitions: Seq[PartitionInfo],
+                                  hiveSchema: StructType): Unit = {
       val newPartitions = partitions.filterNot(p => existingPartitions.exists(_.key == p))
 
       if (newPartitions.isEmpty) logger.info("No new partitions arrived")
@@ -120,10 +112,10 @@ object DataKeeper {
     }
 
     private def updateExistingPartitions(
-      spark: SparkSession,
-      config: DataKeeperConfig,
-      incomingData: DataFrame,
-      partitions: Seq[PartitionInfo]): Unit = {
+                                          spark: SparkSession,
+                                          config: DirtyPartitionerConfig,
+                                          incomingData: DataFrame,
+                                          partitions: Seq[PartitionInfo]): Unit = {
 
       def updatePartition(part: PartitionInfo): Unit = {
         logger.info(s"Updating existing partition ${part.key} located at ${part.dir}")
@@ -180,10 +172,10 @@ object DataKeeper {
         .map(_.getValuesMap[Any](partitioningColumns))
 
     private def getExistingPartitions(
-     spark: SparkSession,
-     tableDir: String,
-     hiveTable: String,
-     partitionsFromKafka: Array[PartitionKey]): Seq[PartitionInfo] = {
+                                       spark: SparkSession,
+                                       tableDir: String,
+                                       hiveTable: String,
+                                       partitionsFromKafka: Array[PartitionKey]): Seq[PartitionInfo] = {
 
       def dropPartitionVersionFromPath(path: String) = path.substring(0, path.indexOf(s"/$partitionVersionColumn"))
 
@@ -224,44 +216,5 @@ object DataKeeper {
 
     private def reorderColumns(df: DataFrame, columns: Seq[String]): DataFrame =
       df.select(columns.head, columns.tail: _*)
-  }
-
-  implicit class KafkaContext(sparkSession: SparkSession) extends Serializable {
-    @transient
-    lazy val logger: Logger = LoggerFactory.getLogger(this.getClass)
-
-    val spark: SparkSession = sparkSession
-
-    private val defaultConfig: Config = ConfigFactory.parseResources("datakeeper.conf").resolve()
-    val config: DataKeeperConfig = DataKeeperConfig(defaultConfig)
-    val offsetManager: OffsetManager = new OffsetManager(config.kafkaParams, config.topic, config.maxMessagesPerPartition)
-
-    def readFromKafka(): DataFrame = {
-      val offsetRanges = offsetManager.getOffsetRanges(config.initialOffset.toArray)
-      logger.info(offsetRanges.mkString("Offsets to read: ", ", ", ""))
-      logger.info(s"Count of messages: ${offsetRanges.map(range => range.untilOffset - range.fromOffset).sum}")
-
-      val kafkaRDD = KafkaUtils.createRDD[String, GenericRecord](
-        sc = sparkSession.sparkContext,
-        kafkaParams = config.kafkaParams.asJava,
-        offsetRanges = offsetRanges,
-        locationStrategy = LocationStrategies.PreferConsistent)
-
-      val avroSchema: Schema = kafkaRDD.first.value.getSchema
-      logger.info(s"avroSchema: $avroSchema")
-
-      val sparkSchema: StructType = SchemaConverters.toSqlType(avroSchema).dataType.asInstanceOf[StructType]
-      logger.info(s"sparkSchema: $sparkSchema")
-
-      val deserializedRDD: RDD[Row] = kafkaRDD.map[Row](cr =>
-        AvroMapping.convertAvroToSparkValue(cr.value, sparkSchema, cr.value.getSchema).asInstanceOf[GenericRow])
-
-      spark.createDataFrame(deserializedRDD, sparkSchema)
-    }
-
-    def commitOffset(): Unit = {
-      val committedOffsets = offsetManager.commitOffsets()
-      logger.info(s"Offsets committed $committedOffsets")
-    }
   }
 }

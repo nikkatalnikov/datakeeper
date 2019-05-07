@@ -1,4 +1,4 @@
-package datakeeper
+package datakeeper.kafkacontext
 
 import java.nio.ByteBuffer
 import java.sql.Timestamp

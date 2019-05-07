@@ -1,4 +1,4 @@
-package datakeeper
+package datakeeper.kafkacontext
 
 import org.apache.avro.generic.GenericRecord
 import org.apache.kafka.clients.consumer.KafkaConsumer
@@ -8,12 +8,12 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 
-class OffsetManager(kafkaParams: Map[String, AnyRef], topic: String, maxMessagesPerPartition: Int) {
+class OffsetManager(kafkaParams: Map[String, AnyRef], topic: String, maxMessagesPerPartition: Long) {
   @transient private[this] val logger = LoggerFactory.getLogger(this.getClass)
 
   private val consumer = new KafkaConsumer[String, GenericRecord](kafkaParams.asJava)
 
-  def getOffsetRanges(initialOffsets: Array[(TopicPartition, Long)] = Array.empty): Array[OffsetRange] = {
+  def getOffsetRanges(initialOffsets: Map[TopicPartition, Long] = Map.empty): Array[OffsetRange] = {
     val partitions = Option(consumer.partitionsFor(topic))
       .map { listPartitions =>
         listPartitions.asScala.map(p => new TopicPartition(p.topic, p.partition))
