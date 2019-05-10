@@ -33,7 +33,7 @@ trait TestHelper extends BeforeAndAfterAll with Matchers {
   val kafkaConfig: TopicsContext = KafkaContextConfig(testConfig)(topic)
 
   val producer = new KafkaProducer[String, GenericRecord](kafkaConfig.kafkaParams.asJava)
-  val partitionCount = 3
+  val partitionCount = 1
 
   private val client = AdminClient.create(kafkaConfig.kafkaParams.asJava)
   private val topicConf = new NewTopic(kafkaConfig.topic, partitionCount, 1)
@@ -43,6 +43,7 @@ trait TestHelper extends BeforeAndAfterAll with Matchers {
   }
 
   override def afterAll(): Unit = {
+    println("topics deleted")
     client.deleteTopics(Set(kafkaConfig.topic).asJava)
   }
 
