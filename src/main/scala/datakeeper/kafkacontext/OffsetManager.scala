@@ -46,6 +46,7 @@ class OffsetManager(kafkaParams: Map[String, AnyRef], topic: String, maxMessages
     }
   }
 
+  // TODO: pass OffsetRange externally
   def commitOffsets(): Map[TopicPartition, Long] = {
     val committedOffsets = consumer.assignment.asScala.map(p => p -> consumer.position(p)).toMap
     consumer.commitSync()
