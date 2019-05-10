@@ -28,15 +28,14 @@ object KafkaContext {
       case (topic: String, context: TopicsContext) => topic -> new OffsetManager(context.kafkaParams, topic, context.maxMessages)
     }
 
-    def readFromKafka(topic: String): DataFrame = {
-      val topicsContext = config(topic)
-      val offsetRanges = offsetManagersMap(topic).getOffsetRanges(topicsContext.initialOffsets)
+    def readFromKafka(topicContext: TopicsContext): DataFrame = {
+      val offsetRanges = offsetManagersMap(topicContext.topic).getOffsetRanges(topicContext.initialOffsets)
       logger.info(offsetRanges.mkString("Offsets to read: ", ", ", ""))
       logger.info(s"Count of messages: ${offsetRanges.map(range => range.untilOffset - range.fromOffset).sum}")
 
       val kafkaRDD = KafkaUtils.createRDD[String, GenericRecord](
         sc = sparkSession.sparkContext,
-        kafkaParams = topicsContext.kafkaParams.asJava,
+        kafkaParams = topicContext.kafkaParams.asJava,
         offsetRanges = offsetRanges,
         locationStrategy = LocationStrategies.PreferConsistent)
 
